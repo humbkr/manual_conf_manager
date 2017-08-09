@@ -1,0 +1,8 @@
+name = Manual Configuration Manager
+core = 7.x
+package = Configuration
+project = manual_conf_manager
+description = "A collection of tools to manage drupal configuration without features."
+version = "7.x-1.0"
+
+dependencies[] = entity

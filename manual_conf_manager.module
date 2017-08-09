@@ -1,0 +1,160 @@
+<?php
+/**
+ * @file
+ * Code for the Manual Configuration Manager module.
+ */
+
+module_load_include('inc', 'manual_conf_manager', 'manual_conf_manager.content_type');
+
+/**
+ * Insert or update a block record.
+ *
+ * @param array $blocks
+ *   An array of blocks array. Example:
+ *   array(
+ *     array(
+ *       'module' => 'search',
+ *       'delta' => 'form',
+ *       'theme' => $default_theme,
+ *       'status' => 1,
+ *       'weight' => -17,
+ *       'region' => 'navigation',
+ *       'pages' => '',
+ *       'title' => '',
+ *       'cache' => -1,
+ *       'visibility' => BLOCK_VISIBILITY_NOTLISTED,
+ *     ),
+ *   ).
+ */
+function manual_conf_manager_place_blocks(array $blocks) {
+  foreach ($blocks as $block) {
+    if (isset($block['module']) && isset($block['delta']) && isset($block['theme'])) {
+      $fields = array();
+      foreach ($block as $key => $item) {
+        if ($key != 'module' && $key != 'delta' && $key != 'theme') {
+          $fields[$key] = $item;
+        }
+      }
+
+      // Failsafe.
+      if (!isset($block['pages'])) {
+        $fields['pages'] = '';
+      }
+
+      db_merge('block')
+        ->key(array(
+          'module' => $block['module'],
+          'delta' => $block['delta'],
+          'theme' => $block['theme'],
+        ))
+        ->fields($fields)
+        ->execute();
+    }
+  }
+}
+
+/**
+ * Create or update field bases.
+ *
+ * @param array $field_bases
+ *   The field bases to create or update.
+ */
+function manual_conf_manager_update_field_bases(array $field_bases) {
+  foreach ($field_bases as $field_info) {
+    $existing_field = field_read_field($field_info['field_name'], array('include_inactive' => TRUE));
+    if (!$existing_field) {
+      field_create_field($field_info);
+      watchdog('manual_conf_manager', 'Created field base : ' . $field_info['field_name']);
+    }
+    else {
+      field_update_field($field_info);
+      watchdog('manual_conf_manager', 'Updated field base : ' . $field_info['field_name']);
+    }
+  }
+}
+
+/**
+ * Create or update field instances.
+ *
+ * @param array $field_instances
+ *   The field instances to create or update.
+ */
+function manual_conf_manager_update_field_instances(array $field_instances) {
+  foreach ($field_instances as $instance) {
+    $existing_field = field_info_instance($instance['entity_type'], $instance['field_name'], $instance['bundle']);
+    if (!$existing_field) {
+      field_create_instance($instance);
+      watchdog('manual_conf_manager', 'Created field instance : ' . $instance['bundle'] . ' - ' . $instance['field_name']);
+    }
+    else {
+      field_update_instance($instance);
+      watchdog('manual_conf_manager', 'Updated field instance : ' . $instance['bundle'] . ' - ' . $instance['field_name']);
+    }
+  }
+}
+
+/**
+ * Load all the views located in a folder includes/views.
+ *
+ * Quick How-To:
+ * Create in your module a folder includes/views.
+ * In this folder, create one file per view.
+ * In each file, just create a function named <module_name>_get_<filename>_view.
+ * In this function, just copy paste the code exported via views UI and return
+ * the whole array.
+ *
+ * Then in your .module file, just implement hook_views_default_views() and
+ * make it return manual_conf_manager_views_update_load_views() result:
+ *
+ * function my_module_views_default_views() {
+ *   return manual_conf_manager_views_update_load_views('my_module');
+ * }
+ *
+ * @param string $module
+ *   The module containing the views to load. If not provided, defaults to the
+ *   current module (only works if function is called from .module file).
+ *
+ * @return array
+ *   The views to be returned by hook_views_default_views.
+ */
+function manual_conf_manager_views_update_load_views($module = NULL) {
+  $folder = drupal_get_path('module', $module) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'views';
+  $iterator = new DirectoryIterator($folder);
+  $views = array();
+
+  foreach ($iterator as $file) {
+    if ($file->isFile()) {
+      $filename = drupal_substr($file, 0, strrpos($file, '.'));
+      module_load_include('inc', $module, 'includes' . DIRECTORY_SEPARATOR . 'views' . DIRECTORY_SEPARATOR . $filename);
+      $view = call_user_func_array($module . '_get_' . $filename . '_view', array());
+
+      if (isset($view)) {
+        $views[$view->name] = $view;
+      }
+    }
+  }
+  return $views;
+}
+
+/**
+ * Import the configuration of the wysiwyg module.
+ *
+ * Usage: use Features export to feed this function.
+ *
+ * @param array $profiles
+ *   An array of wysiwyg profiles configuration.
+ */
+function manual_conf_manager_import_wysiwyg_profiles(array $profiles = array()) {
+  if (module_exists('wysiwig')) {
+    foreach ($profiles as $profile) {
+      db_merge('wysiwyg')
+        ->key(array('format' => $profile['format']))
+        ->fields(array(
+          'editor' => $profile['editor'],
+          'settings' => serialize($profile['settings']),
+        ))
+        ->execute();
+    }
+    wysiwyg_profile_cache_clear();
+  }
+}
